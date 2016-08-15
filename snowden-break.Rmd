@@ -1,0 +1,132 @@
+---
+title: "The probability of Snowden's periodic Twitter drought"
+output: html_document
+---
+<img src="https://doeho6k8shw5z.cloudfront.net/imengine/image.php?uuid=eccf60af-038a-4181-bd90-72e67c1f9575&type=preview&source=false&function=hardcrop&width=1600&height=937&q=75" style="max-width: 100%; height: auto; width: auto\9; /* ie8 */" alt="" />
+<p class="caption"><em>Edward Snowden through the screen in Stuttgart in 2014, where he participated virtually in a peace price ceremony. Photo: EPA-archive</em></p>
+
+**2016-08-13** (edited 2016-08-14)
+
+*Disclaimer: This post is not making any actual predictions regarding the speculated and dismissed death of Snowden*
+
+Eight days ago parts of the internetz was sent into feverish speculation over whether Edward Snowden had died or not. The discussion eased only after both journalists Glenn Greenwald and Barton Gellman tweeted that everybody should take a deep breath.
+
+The whole thing was sparked by two mysterious tweets that Snowden published and then deleted. The first one was a call to action directed towards his former colleagues. The second contained a random looking sequence of 64 characters that could be an encryption key. It could be a so called “dead man’s switch” set to be released if Snowden would be killed or captured.
+Greenwald tweeted that *He is fine.*, and Gellman who is writing a book about Snowden wrote:
+
+*1. Everyone requesting proof of life for me and Snowden, take a deep breath.*  
+*2. Some tweets have private meaning.*  
+*3. My @SecureDrop is up.*  
+
+When both Greenwald and Gellman assure that Snowden is cool, I guess that kind of settles the matter. But the tweets are curious nonetheless. Therefore, many of us were left wondering what's going on and waiting to hear something from him. Granted that Snowden updates his own account, which is likely, he seldom takes a break from Twitter. At least for periods that are longer than a day. As I am writing this we are at day 8, and the whistleblower has yet to be seen on the platform.
+
+So there was an obvious question: Based on the previous Twitter history of Snowden, what is the likelihood of him being quiet for this long?
+
+To find out, I started by downloading his tweethistory.
+
+
+
+```{r echo=FALSE, message=FALSE, error=FALSE, results='hide'}
+Sys.setlocale("LC_TIME", "en_US.UTF-8")
+lapply(c('twitteR', 'dplyr', 'ggplot2', 'lubridate', 'tidyr', 'plotly', 'knitr', 'rmarkdown'),
+       library, character.only = TRUE)
+theme_set(new = theme_bw())
+
+# save following to ~/.Rprofile
+# my_tw_key <- "enter your key here"
+# my_tw_secret <- "enter your secret her"
+# my_tw_access_token <-"enter your access token here"
+# my_tw_access_secret <-	"enter your access secret here"
+
+setup_twitter_oauth(my_tw_key, my_tw_secret, my_tw_access_token, my_tw_access_secret)
+
+# retreive tweets
+
+tweets <- userTimeline("Snowden",includeRts=TRUE, maxID = NULL,  n = 3000)
+tweets <- twListToDF(tweets)
+
+
+
+```
+
+Next we calculated the waiting times between the tweets and visualized the raw data. Twitter API gives us about a year's worth of data.
+
+```{r echo=FALSE}
+
+tweets <- tweets %>% 
+  unique %>% 
+  arrange(desc(created)) %>% 
+  mutate(diff = created - lead(created),
+         days = as.numeric(diff, units = 'days') %>% round)
+
+raw_plot <- ggplot(tweets, aes(created, days)) + 
+  geom_point() + 
+  ggtitle("Break lengths in days and timestamps for tweets")
+ggplotly(raw_plot)
+```
+
+As the next step we calculated and plotted the likelihood of different waiting times between the tweets. We used basic exponential distribution to calculate the probability.
+
+```{r echo=FALSE}
+
+calc_probabilities <- function(data){
+  #lenght of period to be examined (days)
+  period_lenght <- 50
+  date_range <- data$created[1] + 1:period_lenght * days(1)
+  
+  # mean length of period between tweets
+  waitingtimes_mean <- mean(data$days, na.rm =T)
+  
+  # calculating the probabilities, assumes poisson process.  
+  # dist should be verified and possibly replaced by another method.
+  probability <- 1-pexp(1:period_lenght, 1/waitingtimes_mean) %>% round(5)
+  
+  # build data frame
+  data <-data.frame(Date=date_range,Probability =probability)
+  data$Date <- as.Date(date_range, "%b %d")
+  data
+}
+
+
+plot_prob <- function(data, title){
+
+  plot <- ggplot(data, aes(Date,Probability)) +
+  geom_line() +
+  ggtitle(title)
+
+  ggplotly(plot)
+}
+
+# all tweets & RTs
+prob_data <- calc_probabilities(tweets)
+plot_prob(prob_data, "Probability of the length of @Snowden's Twitter break")
+
+```
+As can be seen in the plot, the probability of Snowden not having tweeted goes to almost zero in merely a few days. That does not sound right. Lets take a look at the distribution of the waiting times.
+
+```{r echo=FALSE}
+tweets$days %>% as.factor %>% summary
+```
+
+As the probability of a certain waiting time is calculated using the mean of all samples, this simple model makes the interpretation that the probability decreases very quickly for each added day of waiting time. Snowden tweets something at least once on most days in the material. Those “normal” days have a waiting time of zero days and they end up dominating the mean. This is a bit like calculating your average holiday length by including the zero waiting time values of even those days when you are not on a holiday. We need to set a threshold for how long Snowden needs to be away from Twitter to make it count as a break. If we look at the distribution above we can see that 0-1 day breaks are fairly common, a noise of sorts. So let’s put a threshold and filter this “noise” out from the material and calculate the mean length of only the actual breaks from Twitter and then recalculate the probabilities.
+
+```{r echo=FALSE}
+
+# mean filter only those droughts that are longer than 1 day
+prob_data <- calc_probabilities(tweets %>% filter(days > 1))
+plot_prob(prob_data, "Probability of the length of @Snowden's Twitter break")
+
+
+```
+
+This starts to look more intuitive. The longest break in the historical data is 23 days, and the probability in the model goes close to zero in a drought that is a bit under a month.
+
+## Likelihood of the current (Aug 13th) length of Snowden's Twitter drought: ~~14~~ `r round(prob_data$Probability[8] * 100,0)` %
+
+Based on this model the likelihood of Snowden not having tweeted today is ~~14~~ `r round(prob_data$Probability[8] * 100,0)` % and tomorrow it will go down to ~~11~~ `r round(prob_data$Probability[9] * 100,0)` %.
+
+**Disclaimer: Let it be said out loud, if it isn't obvious: we do not of course know and cannot know anything about whether Snowden is really alive, captured or anything else more sinister. The only thing we calculated here is how unusual the length of his current break is based on his past Twitter behaviour. There are obviously a myriad of possible reasons for why he is not tweeting at the moment.**
+
+**Sami Kallinen** @sakalli
+
+*This post was edited on 2016-08-14 to remove the more speculative suggestions - despite all the disclaimers - of a connection between Snowden's Twitter behavior and his ruomored death or capture. Furthermore, in the original version of the post, the API response did not include RTs. Consequentially original percentages & distribution has been updated to include data about RTs.*
